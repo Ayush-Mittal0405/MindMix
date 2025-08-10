@@ -4,8 +4,12 @@ import {
   login,
   getProfile,
   updateProfile,
+  requestPasswordReset,
+  resetPassword,
   registerValidation,
-  loginValidation
+  loginValidation,
+  requestResetValidation,
+  resetPasswordValidation
 } from '../controllers/authController';
 import { auth } from '../middleware/auth';
 
@@ -14,6 +18,8 @@ const router = express.Router();
 // Public routes
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
+router.post('/forgot-password', requestResetValidation, requestPasswordReset);
+router.post('/reset-password', resetPasswordValidation, resetPassword);
 
 // Protected routes
 router.get('/profile', auth, getProfile);

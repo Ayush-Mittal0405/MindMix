@@ -3,70 +3,119 @@ import { body, validationResult } from 'express-validator';
 import slugify from 'slugify';
 import { getDB } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import jwt from 'jsonwebtoken';
 
 export const getAllPosts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = 1, limit = 10, category, search, status = 'published' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
+    const { page = 1, limit = 10, category, search, status } = req.query;
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.max(1, Math.min(50, Number(limit) || 10));
+    const offsetNum = (pageNum - 1) * limitNum;
     const db = getDB();
 
+    // Determine effective status: default to 'published' if not provided
+    const rawStatus = typeof status === 'string' ? status : undefined;
+    const effectiveStatus = rawStatus ?? 'published';
+
+    // Build WHERE clause and parameters
+    const conditions: string[] = [];
+    const queryParams: any[] = [];
+
+    // Filter by status unless explicitly 'all'
+    if (effectiveStatus !== 'all') {
+      conditions.push('p.status = ?');
+      queryParams.push(effectiveStatus);
+    }
+
+    if (category) {
+      conditions.push('c.slug = ?');
+      queryParams.push(category);
+    }
+
+    if (search) {
+      conditions.push('(p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?)');
+      const searchTerm = `%${search}%`;
+      queryParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    // Always add a default condition to ensure consistent query structure
+    if (conditions.length === 0) {
+      conditions.push('1 = 1'); // This is always true, so it won't filter anything
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
     let query = `
-      SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, 
+      SELECT p.*, u.username as author_name, u.avatar_url as author_avatar,
              c.name as category_name, c.slug as category_slug,
              (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count
       FROM posts p
       LEFT JOIN users u ON p.author_id = u.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.status = ?
+      ${whereClause}
+      ORDER BY p.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}
     `;
-    const queryParams: any[] = [status];
 
-    if (category) {
-      query += ' AND c.slug = ?';
-      queryParams.push(category);
-    }
+    // No LIMIT/OFFSET params to push, already inlined after sanitization
 
-    if (search) {
-      query += ' AND (p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?)';
-      const searchTerm = `%${search}%`;
-      queryParams.push(searchTerm, searchTerm, searchTerm);
-    }
-
-    query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
-    queryParams.push(Number(limit), offset);
+    console.log('SQL Query:', query);
+    console.log('Query Parameters:', queryParams);
 
     const [posts] = await db.execute(query, queryParams);
 
     // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM posts p LEFT JOIN categories c ON p.category_id = c.id WHERE p.status = ?';
-    const countParams: any[] = [status];
+    const countConditions: string[] = [];
+    const countParams: any[] = [];
+
+    // Apply the same status logic for count
+    if (effectiveStatus !== 'all') {
+      countConditions.push('p.status = ?');
+      countParams.push(effectiveStatus);
+    }
 
     if (category) {
-      countQuery += ' AND c.slug = ?';
+      countConditions.push('c.slug = ?');
       countParams.push(category);
     }
 
     if (search) {
-      countQuery += ' AND (p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?)';
+      countConditions.push('(p.title LIKE ? OR p.content LIKE ? OR p.excerpt LIKE ?)');
       const searchTerm = `%${search}%`;
       countParams.push(searchTerm, searchTerm, searchTerm);
     }
 
+    // Always add a default condition to ensure consistent query structure
+    if (countConditions.length === 0) {
+      countConditions.push('1 = 1'); // This is always true, so it won't filter anything
+    }
+
+    const countWhereClause = `WHERE ${countConditions.join(' AND ')}`;
+
+    let countQuery = `SELECT COUNT(*) as total FROM posts p LEFT JOIN categories c ON p.category_id = c.id ${countWhereClause}`;
+    
+    console.log('Count Query:', countQuery);
+    console.log('Count Parameters:', countParams);
+    
     const [countResult] = await db.execute(countQuery, countParams);
     const total = (countResult as any[])[0].total;
 
     res.json({
       posts,
       pagination: {
-        current: Number(page),
-        total: Math.ceil(total / Number(limit)),
-        hasNext: Number(page) * Number(limit) < total,
-        hasPrev: Number(page) > 1
+        current: pageNum,
+        total: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1
       }
     });
   } catch (error) {
     console.error('Get all posts error:', error);
-    res.status(500).json({ message: 'Server error' });
+    const err: any = error;
+    const isProd = (process.env.NODE_ENV || 'development') === 'production';
+    res.status(500).json({
+      message: 'Server error',
+      ...(isProd ? {} : { error: err?.message || String(err), sql: err?.sql, sqlMessage: err?.sqlMessage })
+    });
   }
 };
 
@@ -75,23 +124,46 @@ export const getPostById = async (req: Request, res: Response): Promise<void> =>
     const { id } = req.params;
     const db = getDB();
 
-    // Increment view count
-    await db.execute('UPDATE posts SET view_count = view_count + 1 WHERE id = ?', [id]);
+    // Try to identify user (if token provided) to allow viewing own drafts
+    let requesterId: number | null = null;
+    const authHeader = req.header('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = jwt.verify(authHeader.replace('Bearer ', ''), process.env.JWT_SECRET || 'your-secret-key') as any;
+        requesterId = decoded.userId as number;
+      } catch {
+        requesterId = null;
+      }
+    }
 
-    const [posts] = await db.execute(`
+    // Fetch post regardless of status
+    const [rows] = await db.execute(`
       SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, u.bio as author_bio,
              c.name as category_name, c.slug as category_slug
       FROM posts p
       LEFT JOIN users u ON p.author_id = u.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.id = ? AND p.status = 'published'
+      WHERE p.id = ?
     `, [id]);
 
-    const post = (posts as any[])[0];
+    const post = (rows as any[])[0];
 
     if (!post) {
       res.status(404).json({ message: 'Post not found' });
       return;
+    }
+
+    // Only allow drafts to be viewed by their author (or if published)
+    const isOwner = requesterId !== null && requesterId === post.author_id;
+    if (post.status !== 'published' && !isOwner) {
+      res.status(404).json({ message: 'Post not found' });
+      return;
+    }
+
+    // Increment views only for published posts
+    if (post.status === 'published') {
+      await db.execute('UPDATE posts SET view_count = view_count + 1 WHERE id = ?', [id]);
+      post.view_count = (post.view_count || 0) + 1;
     }
 
     res.json({ post });
@@ -109,7 +181,16 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const { title, content, excerpt, category_id, status = 'draft' } = req.body;
+    const { title, content } = req.body as { title: string; content: string };
+    const rawExcerpt = (req.body as any).excerpt as string | undefined;
+    const rawCategoryId = (req.body as any).category_id as number | string | undefined;
+    const rawStatus = (req.body as any).status as 'draft' | 'published' | undefined;
+    const featured_image = (req.body as any).featured_image as string | undefined;
+
+    const excerpt = rawExcerpt ?? null;
+    const category_id = rawCategoryId ? Number(rawCategoryId) : null;
+    const status: 'draft' | 'published' = rawStatus === 'published' ? 'published' : 'draft';
+
     const authorId = req.user!.id;
     const db = getDB();
 
@@ -128,9 +209,9 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const [result] = await db.execute(`
-      INSERT INTO posts (title, slug, content, excerpt, author_id, category_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [title, slug, content, excerpt, authorId, category_id, status]);
+      INSERT INTO posts (title, slug, content, excerpt, featured_image, author_id, category_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [title, slug, content, excerpt, featured_image ?? null, authorId, category_id, status]);
 
     const postId = (result as any).insertId;
 
@@ -164,7 +245,16 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const { id } = req.params;
-    const { title, content, excerpt, category_id, status } = req.body;
+    const { title, content } = req.body as { title: string; content: string };
+    const rawExcerpt = (req.body as any).excerpt as string | undefined;
+    const rawCategoryId = (req.body as any).category_id as number | string | undefined;
+    const rawStatus = (req.body as any).status as 'draft' | 'published' | undefined;
+    const newFeaturedImage = (req.body as any).featured_image as string | undefined;
+
+    const excerpt = rawExcerpt ?? null;
+    const category_id = rawCategoryId ? Number(rawCategoryId) : null;
+    const status: 'draft' | 'published' = rawStatus === 'published' ? 'published' : 'draft';
+
     const authorId = req.user!.id;
     const db = getDB();
 
@@ -179,9 +269,11 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
+    const existing = (posts as any[])[0];
+
     // Generate new slug if title changed
-    let slug = (posts as any[])[0].slug;
-    if (title && title !== (posts as any[])[0].title) {
+    let slug = existing.slug as string;
+    if (title && title !== existing.title) {
       slug = slugify(title, { lower: true, strict: true });
       
       // Check if new slug already exists
@@ -196,11 +288,13 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
       }
     }
 
+    const featured_image = newFeaturedImage !== undefined ? newFeaturedImage : existing.featured_image;
+
     await db.execute(`
       UPDATE posts 
-      SET title = ?, slug = ?, content = ?, excerpt = ?, category_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+      SET title = ?, slug = ?, content = ?, excerpt = ?, featured_image = ?, category_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND author_id = ?
-    `, [title, slug, content, excerpt, category_id, status, id, authorId]);
+    `, [title, slug, content, excerpt, featured_image ?? null, category_id, status, id, authorId]);
 
     // Get updated post
     const [updatedPosts] = await db.execute(`
@@ -252,8 +346,12 @@ export const deletePost = async (req: AuthRequest, res: Response): Promise<void>
 export const getMyPosts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const authorId = req.user!.id;
-    const { page = 1, limit = 10, status } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
+    const { page = 1, limit = 10, status } = req.query as any;
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.max(1, Math.min(50, Number(limit) || 10));
+    const offsetNum = (pageNum - 1) * limitNum;
+
     const db = getDB();
 
     let query = `
@@ -270,8 +368,7 @@ export const getMyPosts = async (req: AuthRequest, res: Response): Promise<void>
       queryParams.push(status);
     }
 
-    query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';
-    queryParams.push(Number(limit), offset);
+    query += ` ORDER BY p.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [posts] = await db.execute(query, queryParams);
 

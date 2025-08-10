@@ -24,6 +24,10 @@ A modern, full-stack blog platform built with React, Node.js, Express, and MySQL
 
 ## Quick Start
 
+To keep developing, use:
+Backend: cd server && npm run dev (health: http://localhost:5000/api/health)
+Frontend: cd client && npm start (app: http://localhost:3000)
+
 ### Prerequisites
 
 - Node.js (v16 or higher)
@@ -38,7 +42,7 @@ A modern, full-stack blog platform built with React, Node.js, Express, and MySQL
    ```
 
 2. **Set up the database:**
-   - Create a MySQL database named `blog_platform`
+   - Create a MySQL database named ``
    - Update database credentials in `server/config/database.js`
 
 3. **Start the development servers:**
