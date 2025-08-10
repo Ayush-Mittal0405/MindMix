@@ -75,3 +75,12 @@ uploads/
 # Temporary files
 tmp/
 temp/ 
+
+# Good .gitignore (ensure these are present)
+echo node_modules/
+echo client/node_modules/
+echo server/node_modules/
+echo .env
+echo server/.env
+echo client/.env
+echo server/uploads/
