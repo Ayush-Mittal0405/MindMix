@@ -3,16 +3,47 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const dbConfig: mysql.PoolOptions = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'blog_platform',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-};
+// Support either discrete env vars or a full connection string
+// DATABASE_URL / MYSQL_URL formats supported:
+// - mysql://user:pass@host:3306/dbname
+// - mysql://host:3306/dbname?user=...&password=...
+const connectionString = process.env.DATABASE_URL || process.env.MYSQL_URL;
+
+const defaultPoolSize = parseInt(process.env.DB_POOL_SIZE || '10');
+const useSSL = (process.env.DB_SSL || 'false').toLowerCase() === 'true';
+
+let dbConfig: mysql.PoolOptions;
+
+if (connectionString) {
+  // Parse connection string to a PoolOptions object to keep compatibility
+  const url = new URL(connectionString);
+  const querySsl = url.searchParams.get('ssl');
+  const effectiveUseSSL = useSSL || (querySsl === 'true' || querySsl === '1' || querySsl === 'required');
+
+  dbConfig = {
+    host: url.hostname,
+    port: parseInt(url.port || '3306'),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ''),
+    waitForConnections: true,
+    connectionLimit: defaultPoolSize,
+    queueLimit: 0,
+    ssl: effectiveUseSSL ? { rejectUnauthorized: false } : undefined
+  };
+} else {
+  dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'blog_platform',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    waitForConnections: true,
+    connectionLimit: defaultPoolSize,
+    queueLimit: 0,
+    ssl: useSSL ? { rejectUnauthorized: false } : undefined
+  };
+}
 
 let pool: mysql.Pool;
 

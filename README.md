@@ -28,6 +28,15 @@ To keep developing, use:
 Backend: cd server && npm run dev (health: http://localhost:5000/api/health)
 Frontend: cd client && npm start (app: http://localhost:3000)
 
+### Deploy on Vercel (serverless)
+
+This project can deploy fully on Vercel. The API is exposed via `api/[...all].ts` which wraps the Express app in a serverless function. Uploads use Vercel Blob (set `BLOB_READ_WRITE_TOKEN`).
+
+Steps:
+1. Set env vars in Vercel Project: `DATABASE_URL`, `JWT_SECRET`, `CLIENT_URL`, `DB_SSL=true` (if needed), `BLOB_READ_WRITE_TOKEN`.
+2. Vercel builds both `server` and `client` via root `npm run build`.
+3. All API requests go to `/api/*`.
+
 ### Prerequisites
 
 - Node.js (v16 or higher)
