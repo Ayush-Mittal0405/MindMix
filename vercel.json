@@ -1,5 +1,6 @@
 {
   "framework": null,
+  "installCommand": "npm run install-all",
   "buildCommand": "npm run build",
   "builds": [
     { "src": "api/[...all].ts", "use": "@vercel/node" },
