@@ -173,7 +173,7 @@ export const getPostById = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const createPost = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createPost = async (req: AuthRequest as any, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -181,11 +181,12 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const { title, content } = req.body as { title: string; content: string };
-    const rawExcerpt = (req.body as any).excerpt as string | undefined;
-    const rawCategoryId = (req.body as any).category_id as number | string | undefined;
-    const rawStatus = (req.body as any).status as 'draft' | 'published' | undefined;
-    const featured_image = (req.body as any).featured_image as string | undefined;
+    const body: any = (req as unknown as Request).body;
+    const { title, content } = body as { title: string; content: string };
+    const rawExcerpt = body.excerpt as string | undefined;
+    const rawCategoryId = body.category_id as number | string | undefined;
+    const rawStatus = body.status as 'draft' | 'published' | undefined;
+    const featured_image = body.featured_image as string | undefined;
 
     const excerpt = rawExcerpt ?? null;
     const category_id = rawCategoryId ? Number(rawCategoryId) : null;
@@ -236,7 +237,7 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-export const updatePost = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updatePost = async (req: AuthRequest as any, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -244,12 +245,14 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const { id } = req.params;
-    const { title, content } = req.body as { title: string; content: string };
-    const rawExcerpt = (req.body as any).excerpt as string | undefined;
-    const rawCategoryId = (req.body as any).category_id as number | string | undefined;
-    const rawStatus = (req.body as any).status as 'draft' | 'published' | undefined;
-    const newFeaturedImage = (req.body as any).featured_image as string | undefined;
+    const params = (req as unknown as Request).params;
+    const body: any = (req as unknown as Request).body;
+    const { id } = params;
+    const { title, content } = body as { title: string; content: string };
+    const rawExcerpt = body.excerpt as string | undefined;
+    const rawCategoryId = body.category_id as number | string | undefined;
+    const rawStatus = body.status as 'draft' | 'published' | undefined;
+    const newFeaturedImage = body.featured_image as string | undefined;
 
     const excerpt = rawExcerpt ?? null;
     const category_id = rawCategoryId ? Number(rawCategoryId) : null;
@@ -343,10 +346,10 @@ export const deletePost = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-export const getMyPosts = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getMyPosts = async (req: AuthRequest as any, res: Response): Promise<void> => {
   try {
     const authorId = req.user!.id;
-    const { page = 1, limit = 10, status } = req.query as any;
+    const { page = 1, limit = 10, status } = (req as unknown as Request).query as any;
 
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.max(1, Math.min(50, Number(limit) || 10));

@@ -2,18 +2,18 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { getDB } from '../config/database';
 
-export interface AuthRequest extends Request {
+export type AuthRequest = Request & {
   user?: {
     id: number;
     username: string;
     email: string;
     role: string;
   };
-}
+};
 
 export const auth = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const token = req.get('Authorization')?.replace('Bearer ', '');
 
     if (!token) {
       res.status(401).json({ message: 'No token, authorization denied' });
