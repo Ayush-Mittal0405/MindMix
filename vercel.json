@@ -2,6 +2,11 @@
   "framework": null,
   "installCommand": "npm run install-all",
   "buildCommand": "npm run build",
+  "functions": {
+    "api/[...all].ts": {
+      "includeFiles": "server/dist/**"
+    }
+  },
   "builds": [
     { "src": "api/[...all].ts", "use": "@vercel/node" },
     { "src": "client/build/**", "use": "@vercel/static" }
