@@ -1,9 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-// Defer importing the server to catch module resolution errors in the response
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+// Plain JS-style handler to avoid TypeScript type dependency on @vercel/node
+export default async function handler(req: any, res: any) {
   try {
-    const mod = await import('../server/src/app');
+    const mod = await import('../server/dist/app');
     const app = (mod as any).app;
     const ensureDatabaseConnection = (mod as any).ensureDatabaseConnection as () => Promise<void>;
     await ensureDatabaseConnection();
