@@ -1,7 +1,7 @@
 // Plain JS-style handler to avoid TypeScript type dependency on @vercel/node
 export default async function handler(req: any, res: any) {
   try {
-    const mod = await import('../server/dist/app');
+    const mod = await import('../server/src/app');
     const app = (mod as any).app;
     const ensureDatabaseConnection = (mod as any).ensureDatabaseConnection as () => Promise<void>;
     await ensureDatabaseConnection();
