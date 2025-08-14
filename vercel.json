@@ -4,10 +4,7 @@
   "buildCommand": "npm run build",
   "functions": {
     "api/[...all].ts": {
-      "includeFiles": [
-        "server/dist/**",
-        "server/package.json"
-      ]
+      "includeFiles": "server/dist/**"
     }
   },
   "builds": [
