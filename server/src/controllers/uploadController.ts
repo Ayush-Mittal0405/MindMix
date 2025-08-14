@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import type { Express } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { getDB } from '../config/database';
