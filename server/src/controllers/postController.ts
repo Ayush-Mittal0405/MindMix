@@ -173,7 +173,7 @@ export const getPostById = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-export const createPost = async (req: AuthRequest as any, res: Response): Promise<void> => {
+export const createPost = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -237,7 +237,7 @@ export const createPost = async (req: AuthRequest as any, res: Response): Promis
   }
 };
 
-export const updatePost = async (req: AuthRequest as any, res: Response): Promise<void> => {
+export const updatePost = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -346,7 +346,7 @@ export const deletePost = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-export const getMyPosts = async (req: AuthRequest as any, res: Response): Promise<void> => {
+export const getMyPosts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const authorId = req.user!.id;
     const { page = 1, limit = 10, status } = (req as unknown as Request).query as any;
